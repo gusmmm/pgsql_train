@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: pgsql_train
+    environment:
+      POSTGRES_USER: theuser
+      POSTGRES_PASSWORD: thepassword
+      POSTGRES_DB: thedb
+    ports:
+      - "8700:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - pgsql_train_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgsql_train_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8701:80"
+    depends_on:
+      - postgres
+    networks:
+      - pgsql_train_network
+
+volumes:
+  postgres_data:
+
+networks:
+  pgsql_train_network:
+    driver: bridge
