@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 import json # For JSON parsing and pretty-printing
+import hashlib # For generating 64-bit ID
+
+from dotenv import load_dotenv  # For loading environment variables from .env files
+import os # For environment variable access
+# Ensure the GOOGLE_API_KEY is set in the environment variables
+load_dotenv()  # Load environment variables from .env file  
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+if not GOOGLE_API_KEY:
+    raise EnvironmentError("GOOGLE_API_KEY environment variable is not set. Please set it to use the Google Generative AI API.")
 
 # Define the PaperMetadata class for schema-based response
 # This class structure guides the LLM on how to format the extracted metadata.
@@ -27,13 +36,6 @@ class PaperMetadata(BaseModel):
     source_file: str = Field(..., description="Source file path or name")
     extracted_at: datetime = Field(default_factory=datetime.now, description="Timestamp of extraction")
     
-    # Enhanced fields for medical research context
-    paper_type: str = Field(default="research_article", description="Type of paper (research_article, review, case_study, etc.)")
-    study_design: Optional[str] = Field(None, description="Study design (cohort, RCT, observational, etc.)")
-    medical_specialty: Optional[str] = Field(None, description="Medical specialty or field")
-    study_population: Optional[str] = Field(None, description="Description of study population")
-    study_period: Optional[str] = Field(None, description="Study period or timeframe")
-    
     # Funding and ethical considerations
     funding_sources: List[str] = Field(default_factory=list, description="Funding sources")
     conflict_of_interest: Optional[str] = Field(None, description="Conflict of interest statement")
@@ -45,7 +47,22 @@ class PaperMetadata(BaseModel):
     supplemental_materials: List[str] = Field(default_factory=list, description="List of supplemental materials")
 
 # Path to the medical paper to be processed
-PAPER_FILE_PATH = "/home/gusmmm/Desktop/public_repos/pgsql_train/docs/zanella_2025-with-images.md"
+PAPER_FILE_PATH = "/home/gusmmm/Desktop/pgsql_train/docs/zanella_2025-with-images.md"
+
+def generate_64bit_id(content: str, source_file: str) -> int:
+    """Generate a 64-bit ID based on paper content and source file."""
+    # Combine content and source file for uniqueness
+    combined_input = f"{source_file}:{content[:1000]}"  # Use first 1000 chars to avoid huge strings
+    
+    # Create SHA-256 hash
+    hash_object = hashlib.sha256(combined_input.encode('utf-8'))
+    hash_hex = hash_object.hexdigest()
+    
+    # Convert first 16 hex characters to integer (64 bits)
+    hash_64bit = int(hash_hex[:16], 16)
+    
+    # Ensure it's a positive 64-bit integer
+    return hash_64bit & 0x7FFFFFFFFFFFFFFF
 
 # Attempt to read the content of the specified paper
 try:
@@ -64,6 +81,10 @@ except Exception as e:
 
 # Proceed only if paper content was successfully loaded
 if paper_content:
+    # Generate 64-bit ID for this paper
+    paper_id = generate_64bit_id(paper_content, PAPER_FILE_PATH)
+    print(f"Generated 64-bit ID: {paper_id}")
+    
     # Initialize the Google Generative AI client
     # This assumes GOOGLE_API_KEY is set in the environment variables
     try:
@@ -84,7 +105,7 @@ The output must be a JSON object that strictly conforms to the PaperMetadata sch
 Do not change the schema or add any additional fields.
 Do not change the content of the fields or the Paper Content, just extract the information as accurately as possible.
 Key instructions for specific fields:
-- 'id': Generate a simple integer (e.g., 1 or a hash if possible, but 1 is acceptable for this test) if no specific ID is found in the text.
+- 'id': Use this exact value: {paper_id}
 - 'source_file': This field must be exactly: "{PAPER_FILE_PATH}"
 - 'extracted_at': This field should represent the current timestamp when you process this (e.g., {datetime.now().isoformat()}).
 - For other fields, extract them from the paper content. If a field is not present, omit it if it's Optional, or use an appropriate default if specified in the schema.

@@ -13,8 +13,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-# Import the processor with absolute imports
-from src.paper_processor import PaperProcessor
+from paper_processor import PaperProcessor
 
 
 def main():
