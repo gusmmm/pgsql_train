@@ -14,6 +14,7 @@ from google.genai import types
 from dotenv import load_dotenv
 
 from ..models.table_data import TableData
+from ..config.ai_models import AI_MODELS
 
 
 class TableExtractor:
@@ -57,6 +58,10 @@ class TableExtractor:
         # Initialize the AI client
         self.client = None
         self._initialize_client()
+        
+        # Print model configuration for transparency
+        print(f"✓ Table Extractor initialized using model: {AI_MODELS.get_model_for_agent('table')}")
+        print(f"  Temperature: {AI_MODELS.DEFAULT_TEMPERATURE}, Max tokens: {AI_MODELS.DEFAULT_MAX_TOKENS}")
         
     def _initialize_client(self) -> None:
         """Initialize the Google Generative AI client following established patterns."""
@@ -251,11 +256,13 @@ Focus on the research significance and interpret the data in the context of the 
 Return ONLY a valid JSON object with these exact fields: 'title', 'summary', 'context_analysis', 'statistical_findings', 'keywords'
 Do not include any explanatory text, just the JSON object."""
 
+            model_name = AI_MODELS.get_model_for_agent('table')
+            print(f"  🤖 Analyzing table {table_number} with model: {model_name}")
             response = self.client.models.generate_content(
-                model="gemini-2.5-pro-preview-06-05",
+                model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.1,
+                    temperature=AI_MODELS.DEFAULT_TEMPERATURE,
                     response_mime_type="application/json",
                 ),
             )

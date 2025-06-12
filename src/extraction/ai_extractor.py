@@ -14,6 +14,7 @@ from google.genai import types
 from dotenv import load_dotenv
 
 from ..models import PaperMetadata
+from ..config.ai_models import AI_MODELS
 
 
 class AIExtractor:
@@ -37,9 +38,18 @@ class AIExtractor:
                 "Please set it to use the Google Generative AI API."
             )
         
+        # Define model configuration once - single source of truth
+        self.model_name = AI_MODELS.get_model_for_agent('metadata')
+        self.temperature = AI_MODELS.DEFAULT_TEMPERATURE
+        self.max_tokens = AI_MODELS.DEFAULT_MAX_TOKENS
+        
         # Initialize the client
         self.client = None
         self._initialize_client()
+        
+        # Print model configuration for transparency
+        print(f"✓ AI Extractor initialized using model: {self.model_name}")
+        print(f"  Temperature: {self.temperature}, Max tokens: {self.max_tokens}")
     
     def _initialize_client(self) -> None:
         """Initialize the Google Generative AI client."""
@@ -75,13 +85,14 @@ class AIExtractor:
             prompt = self._build_extraction_prompt(paper_id, source_file, paper_content)
             
             print("✓ Sending request to Google Generative AI...")
+            print(f"  🤖 Using model: {self.model_name}")
             response = self.client.models.generate_content(
-                model="gemini-2.5-pro-preview-06-05",
+                model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=PaperMetadata,
-                    temperature=0.1,
+                    temperature=self.temperature,
                 ),
             )
             

@@ -14,6 +14,7 @@ from google.genai import types
 from dotenv import load_dotenv
 
 from ..models import TextSection
+from ..config.ai_models import AI_MODELS
 
 
 class TextExtractor:
@@ -37,9 +38,18 @@ class TextExtractor:
                 "Please set it to use the Google Generative AI API."
             )
         
+        # Define model configuration once - single source of truth
+        self.model_name = AI_MODELS.get_model_for_agent('text')
+        self.temperature = AI_MODELS.DEFAULT_TEMPERATURE
+        self.max_tokens = AI_MODELS.DEFAULT_MAX_TOKENS
+        
         # Initialize the client following established pattern
         self.client = None
         self._initialize_client()
+        
+        # Print model configuration for transparency
+        print(f"✓ Text Extractor initialized using model: {self.model_name}")
+        print(f"  Temperature: {self.temperature}, Max tokens: {self.max_tokens}")
     
     def _initialize_client(self) -> None:
         """Initialize the Google Generative AI client following ai_extractor pattern."""
@@ -144,11 +154,12 @@ Paper content to analyze:
 Return ONLY a valid JSON array of objects with these exact fields: 'title', 'content', 'summary', 'keywords', 'level'
 Do not include any explanatory text, just the JSON array."""
 
+            print(f"  🤖 Analyzing text sections with model: {self.model_name}")
             response = self.client.models.generate_content(
-                model="gemini-2.5-pro-preview-06-05",
-                contents=prompt,
+                model=self.model_name,
+                contents=[prompt],
                 config=types.GenerateContentConfig(
-                    temperature=0.1,
+                    temperature=self.temperature,
                     response_mime_type="application/json",
                 ),
             )
