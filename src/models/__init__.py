@@ -1,13 +1,14 @@
 """
 Data models for paper extraction and storage.
 
-This module contains Pydantic models for the implemented paper metadata functionality.
-Additional models for sections, tables, images, etc. will be added as they are implemented.
+This module contains Pydantic models for the implemented paper metadata functionality
+and text sections functionality.
 """
 
 from .paper_metadata import PaperMetadata, generate_64bit_id
+from .text_section import TextSection
 
-__all__ = ['PaperMetadata', 'generate_64bit_id']
+__all__ = ['PaperMetadata', 'TextSection', 'generate_64bit_id']
 
 # Future models will be added here as they are implemented:
 # - Author (for detailed author information)

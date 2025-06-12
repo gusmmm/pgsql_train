@@ -226,6 +226,112 @@ class SchemaManager:
         finally:
             cursor.close()
     
+    def create_text_sections_table(self, schema_name: str = 'papers') -> None:
+        """
+        Create the text_sections table for storing extracted text sections.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {schema_name}.text_sections (
+                -- Core identification
+                id BIGINT PRIMARY KEY,  -- 64-bit unique identifier
+                paper_id BIGINT NOT NULL,  -- Foreign key to paper_metadata
+                
+                -- Section metadata
+                title TEXT NOT NULL,
+                section_number INTEGER NOT NULL,
+                level INTEGER DEFAULT 1,  -- Heading level (1 for main sections, 2 for subsections, etc.)
+                word_count INTEGER DEFAULT 0,
+                
+                -- Section content and analysis
+                content TEXT NOT NULL,  -- Full text content
+                summary TEXT NOT NULL,  -- AI-generated summary
+                keywords TEXT[] DEFAULT ARRAY[]::TEXT[],  -- AI-generated keywords
+                
+                -- Audit fields
+                extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Foreign key constraint
+                CONSTRAINT fk_text_sections_paper_id 
+                    FOREIGN KEY (paper_id) 
+                    REFERENCES {schema_name}.paper_metadata(id) 
+                    ON DELETE CASCADE
+            );
+            """
+            
+            cursor.execute(create_table_sql)
+            print(f"Table '{schema_name}.text_sections' created successfully.")
+        finally:
+            cursor.close()
+
+    def create_text_sections_indexes(self, schema_name: str = 'papers') -> None:
+        """
+        Create useful indexes for the text_sections table.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        indexes = [
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_paper_id ON {schema_name}.text_sections(paper_id);",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_title ON {schema_name}.text_sections USING GIN(to_tsvector('english', title));",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_content ON {schema_name}.text_sections USING GIN(to_tsvector('english', content));",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_summary ON {schema_name}.text_sections USING GIN(to_tsvector('english', summary));",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_keywords ON {schema_name}.text_sections USING GIN(keywords);",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_section_number ON {schema_name}.text_sections(section_number);",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_level ON {schema_name}.text_sections(level);",
+            f"CREATE INDEX IF NOT EXISTS idx_text_sections_extracted_at ON {schema_name}.text_sections(extracted_at);"
+        ]
+        
+        cursor = self.db_connection.connection.cursor()
+        try:
+            for index_sql in indexes:
+                try:
+                    cursor.execute(index_sql)
+                    index_name = index_sql.split('idx_')[1].split(' ')[0]
+                    print(f"Index created: {index_name}")
+                except Exception as e:
+                    print(f"Warning: Could not create index: {e}")
+        finally:
+            cursor.close()
+
+    def create_text_sections_trigger(self, schema_name: str = 'papers') -> None:
+        """
+        Create a trigger to automatically update the updated_at field for text_sections.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            # Create the trigger for text_sections
+            trigger_sql = f"""
+            DROP TRIGGER IF EXISTS update_text_sections_updated_at ON {schema_name}.text_sections;
+            CREATE TRIGGER update_text_sections_updated_at
+                BEFORE UPDATE ON {schema_name}.text_sections
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+            """
+            
+            cursor.execute(trigger_sql)
+            print(f"Trigger 'update_text_sections_updated_at' created successfully.")
+        finally:
+            cursor.close()
+
     def setup_complete_schema(self, schema_name: str = 'papers') -> None:
         """
         Set up the complete database schema for paper metadata.
@@ -261,6 +367,21 @@ class SchemaManager:
                 self.create_update_trigger(schema_name)
             else:
                 print(f"Table '{schema_name}.paper_metadata' already exists.")
+            
+            # Check and create text_sections table if needed
+            if not self.check_table_exists('text_sections', schema_name):
+                print(f"Creating table '{schema_name}.text_sections'...")
+                self.create_text_sections_table(schema_name)
+                
+                # Create indexes for text_sections
+                print("Creating indexes for text_sections...")
+                self.create_text_sections_indexes(schema_name)
+                
+                # Create update trigger for text_sections
+                print("Creating update trigger for text_sections...")
+                self.create_text_sections_trigger(schema_name)
+            else:
+                print(f"Table '{schema_name}.text_sections' already exists.")
             
             # Commit all changes
             if self.db_connection.connection:

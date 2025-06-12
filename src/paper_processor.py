@@ -7,11 +7,11 @@ paper processing workflow using the refactored components.
 
 import os
 import sys
-from typing import Optional
+from typing import Optional, Tuple
 
-from .models import PaperMetadata
-from .extraction import AIExtractor
-from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository
+from .models import PaperMetadata, TextSection
+from .extraction import AIExtractor, TextExtractor
+from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository
 from .utils import FileLoader
 
 
@@ -36,7 +36,9 @@ class PaperProcessor:
         self.db_connection = DatabaseConnection()
         self.schema_manager = SchemaManager(self.db_connection)
         self.repository = PaperMetadataRepository(self.db_connection, schema_name)
+        self.text_sections_repository = TextSectionsRepository(self.db_connection, schema_name)
         self.extractor = AIExtractor()
+        self.text_extractor = TextExtractor()
         
         print(f"✓ Paper processor initialized with schema '{schema_name}'")
     
@@ -79,26 +81,51 @@ class PaperProcessor:
             print("\n📋 Step 4: Ensuring database schema exists...")
             self.schema_manager.setup_complete_schema(self.schema_name)
             
-            # Step 5: Check for duplicate papers
+            # Step 5: Check for duplicate papers and get user preference
             print("\n🔍 Step 5: Checking for duplicate papers...")
-            if self._check_paper_exists(paper_metadata):
-                print("⏭️  Skipping insertion - paper already exists in database.")
+            exists, should_overwrite = self._check_paper_exists(paper_metadata)
+            
+            if exists and not should_overwrite:
+                print("⏭️  Skipping processing - keeping existing paper.")
                 return True
             
-            # Step 6: Insert new paper
-            print("\n💾 Step 6: Inserting paper metadata...")
-            success = self._save_paper_metadata(paper_metadata)
+            # Step 6: Handle overwrite if needed
+            if exists and should_overwrite:
+                print("\n🔄 Step 6: Cleaning up existing data for overwrite...")
+                # Delete existing text sections first (due to foreign key constraint)
+                if self.text_sections_repository.exists_by_paper_id(paper_metadata.id):
+                    print("   Deleting existing text sections...")
+                    self.text_sections_repository.delete_by_paper_id(paper_metadata.id)
             
-            if success:
-                # Commit the transaction
-                if self.db_connection.connection:
-                    self.db_connection.connection.commit()
-                    
-                print("\n" + "=" * 60)
-                print("🎉 Paper processing completed successfully!")
-                print("=" * 60)
+            # Step 7: Insert/Update paper metadata
+            print(f"\n💾 Step 7: {'Updating' if exists and should_overwrite else 'Inserting'} paper metadata...")
+            success = self._save_paper_metadata(paper_metadata, update_existing=exists and should_overwrite)
+            if not success:
+                return False
             
-            return success
+            # Step 8: Extract and save text sections
+            print("\n📝 Step 8: Extracting text sections using AI...")
+            text_sections = self.text_extractor.extract_text_sections(paper_content, paper_metadata.id)
+            
+            if text_sections:
+                print("\n💾 Step 9: Saving text sections to database...")
+                sections_success = self.text_sections_repository.save_all(text_sections)
+                if not sections_success:
+                    print("⚠️  Warning: Failed to save some text sections")
+            else:
+                print("⚠️  Warning: No text sections extracted")
+            
+            # Commit the transaction
+            if self.db_connection.connection:
+                self.db_connection.connection.commit()
+                
+            print("\n" + "=" * 60)
+            print("🎉 Paper processing completed successfully!")
+            print(f"   📄 Paper metadata: {'Updated' if exists else 'Inserted'}")
+            print(f"   📝 Text sections: {len(text_sections)} sections processed")
+            print("=" * 60)
+            
+            return True
             
         except Exception as e:
             print(f"\n✗ Critical error in paper processing pipeline: {e}")
@@ -110,18 +137,19 @@ class PaperProcessor:
         finally:
             self.close_connections()
     
-    def _check_paper_exists(self, paper_metadata: PaperMetadata) -> bool:
+    def _check_paper_exists(self, paper_metadata: PaperMetadata) -> Tuple[bool, bool]:
         """
-        Check if paper already exists in database.
+        Check if paper already exists in database and ask user preference.
         
         Args:
             paper_metadata: Paper metadata to check
             
         Returns:
-            True if paper exists, False otherwise
+            Tuple of (exists, should_overwrite)
         """
         doi = paper_metadata.doi
         title = paper_metadata.title
+        existing_paper = None
         
         if doi:
             # Check by DOI first (most reliable)
@@ -131,9 +159,8 @@ class PaperProcessor:
                 print(f"   ID: {existing_paper['id']}")
                 print(f"   Title: {existing_paper['title']}")
                 print(f"   DOI: {existing_paper['doi']}")
-                return True
         
-        if title:
+        if not existing_paper and title:
             # If no DOI match, check by exact title match
             existing_paper = self.repository.find_by_title(title)
             if existing_paper:
@@ -141,22 +168,46 @@ class PaperProcessor:
                 print(f"   ID: {existing_paper['id']}")
                 print(f"   Title: {existing_paper['title']}")
                 print(f"   DOI: {existing_paper['doi']}")
-                return True
         
-        return False
+        if existing_paper:
+            # Ask user what to do
+            print("\n❓ What would you like to do?")
+            print("   1. Skip processing (keep existing paper)")
+            print("   2. Overwrite existing paper and its text sections")
+            
+            while True:
+                try:
+                    choice = input("Enter choice (1 or 2): ").strip()
+                    if choice == "1":
+                        return True, False  # exists, don't overwrite
+                    elif choice == "2":
+                        # Store paper ID for potential text sections cleanup
+                        paper_metadata.id = existing_paper['id']
+                        return True, True  # exists, overwrite
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
+                except KeyboardInterrupt:
+                    print("\n⏭️  Operation cancelled. Skipping paper processing.")
+                    return True, False
+        
+        return False, False  # doesn't exist
     
-    def _save_paper_metadata(self, paper_metadata: PaperMetadata) -> bool:
+    def _save_paper_metadata(self, paper_metadata: PaperMetadata, update_existing: bool = False) -> bool:
         """
         Save paper metadata to database.
         
         Args:
             paper_metadata: Paper metadata to save
+            update_existing: If True, update existing record; if False, insert new record
             
         Returns:
             True if successful, False otherwise
         """
         try:
-            return self.repository.save(paper_metadata)
+            if update_existing:
+                return self.repository.update(paper_metadata)
+            else:
+                return self.repository.save(paper_metadata)
         except Exception as e:
             print(f"✗ Error saving paper metadata: {e}")
             return False

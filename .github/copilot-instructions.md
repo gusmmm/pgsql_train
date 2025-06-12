@@ -33,6 +33,13 @@ This is a **robust, OOP-based scientific paper metadata extraction and storage s
 - Strong typing with Python type hints
 - Validate data at system boundaries
 
+### 6. **Using python**
+- Follow PEP 8 style guide for Python code
+- Use clear, descriptive names for classes, methods, and variables
+- Write docstrings for all classes and methods
+- Use type hints for function signatures
+- Use uv for project management and virtual environments instead of pip
+
 ## 📁 Project Structure
 
 ```
