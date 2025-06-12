@@ -332,6 +332,118 @@ class SchemaManager:
         finally:
             cursor.close()
 
+    def create_table_data_table(self, schema_name: str = 'papers') -> None:
+        """
+        Create the table_data table for storing extracted tables from papers.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {schema_name}.table_data (
+                -- Core identification
+                id BIGINT PRIMARY KEY,  -- 64-bit unique identifier
+                paper_id BIGINT NOT NULL,  -- Foreign key to paper_metadata
+                
+                -- Table metadata
+                table_number INTEGER NOT NULL,
+                title TEXT NOT NULL,  -- AI-generated descriptive title
+                column_count INTEGER DEFAULT 0,
+                row_count INTEGER DEFAULT 0,
+                
+                -- Table content and analysis
+                raw_content TEXT NOT NULL,  -- Raw markdown table content
+                summary TEXT NOT NULL,  -- AI-generated comprehensive summary
+                context_analysis TEXT NOT NULL,  -- AI analysis of table's research context
+                statistical_findings TEXT NOT NULL,  -- AI-identified statistical results
+                keywords TEXT[] DEFAULT ARRAY[]::TEXT[],  -- AI-generated keywords
+                
+                -- Audit fields
+                extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Foreign key constraint
+                CONSTRAINT fk_table_data_paper_id 
+                    FOREIGN KEY (paper_id) 
+                    REFERENCES {schema_name}.paper_metadata(id) 
+                    ON DELETE CASCADE,
+                    
+                -- Unique constraint to prevent duplicate tables for same paper
+                CONSTRAINT uq_table_data_paper_table_number 
+                    UNIQUE (paper_id, table_number)
+            );
+            """
+            
+            cursor.execute(create_table_sql)
+            print(f"Table '{schema_name}.table_data' created successfully.")
+        finally:
+            cursor.close()
+
+    def create_table_data_indexes(self, schema_name: str = 'papers') -> None:
+        """
+        Create useful indexes for the table_data table for efficient querying.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        indexes = [
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_paper_id ON {schema_name}.table_data(paper_id);",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_title ON {schema_name}.table_data USING GIN(to_tsvector('english', title));",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_summary ON {schema_name}.table_data USING GIN(to_tsvector('english', summary));",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_context_analysis ON {schema_name}.table_data USING GIN(to_tsvector('english', context_analysis));",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_statistical_findings ON {schema_name}.table_data USING GIN(to_tsvector('english', statistical_findings));",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_keywords ON {schema_name}.table_data USING GIN(keywords);",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_table_number ON {schema_name}.table_data(table_number);",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_extracted_at ON {schema_name}.table_data(extracted_at);",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_column_count ON {schema_name}.table_data(column_count);",
+            f"CREATE INDEX IF NOT EXISTS idx_table_data_row_count ON {schema_name}.table_data(row_count);"
+        ]
+        
+        cursor = self.db_connection.connection.cursor()
+        try:
+            for index_sql in indexes:
+                try:
+                    cursor.execute(index_sql)
+                    index_name = index_sql.split('idx_')[1].split(' ')[0]
+                    print(f"Index created: {index_name}")
+                except Exception as e:
+                    print(f"Warning: Could not create index: {e}")
+        finally:
+            cursor.close()
+
+    def create_table_data_trigger(self, schema_name: str = 'papers') -> None:
+        """
+        Create a trigger to automatically update the updated_at timestamp for table_data.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            trigger_sql = f"""
+            CREATE OR REPLACE TRIGGER update_table_data_updated_at
+                BEFORE UPDATE ON {schema_name}.table_data
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+            """
+            
+            cursor.execute(trigger_sql)
+            print(f"Trigger 'update_table_data_updated_at' created successfully.")
+        finally:
+            cursor.close()
+
     def setup_complete_schema(self, schema_name: str = 'papers') -> None:
         """
         Set up the complete database schema for paper metadata.
@@ -382,6 +494,36 @@ class SchemaManager:
                 self.create_text_sections_trigger(schema_name)
             else:
                 print(f"Table '{schema_name}.text_sections' already exists.")
+            
+            # Check and create table_data table if needed
+            if not self.check_table_exists('table_data', schema_name):
+                print(f"Creating table '{schema_name}.table_data'...")
+                self.create_table_data_table(schema_name)
+                
+                # Create indexes for table_data
+                print("Creating indexes for table_data...")
+                self.create_table_data_indexes(schema_name)
+                
+                # Create update trigger for table_data
+                print("Creating update trigger for table_data...")
+                self.create_table_data_trigger(schema_name)
+            else:
+                print(f"Table '{schema_name}.table_data' already exists.")
+            
+            # Check and create table_data table if needed
+            if not self.check_table_exists('table_data', schema_name):
+                print(f"Creating table '{schema_name}.table_data'...")
+                self.create_table_data_table(schema_name)
+                
+                # Create indexes for table_data
+                print("Creating indexes for table_data...")
+                self.create_table_data_indexes(schema_name)
+                
+                # Create update trigger for table_data
+                print("Creating update trigger for table_data...")
+                self.create_table_data_trigger(schema_name)
+            else:
+                print(f"Table '{schema_name}.table_data' already exists.")
             
             # Commit all changes
             if self.db_connection.connection:

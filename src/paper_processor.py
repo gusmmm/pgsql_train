@@ -7,11 +7,11 @@ paper processing workflow using the refactored components.
 
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 
-from .models import PaperMetadata, TextSection
-from .extraction import AIExtractor, TextExtractor
-from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository
+from .models import PaperMetadata, TextSection, TableData
+from .extraction import AIExtractor, TextExtractor, TableExtractor
+from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository, TableDataRepository
 from .utils import FileLoader
 
 
@@ -37,8 +37,10 @@ class PaperProcessor:
         self.schema_manager = SchemaManager(self.db_connection)
         self.repository = PaperMetadataRepository(self.db_connection, schema_name)
         self.text_sections_repository = TextSectionsRepository(self.db_connection, schema_name)
+        self.table_data_repository = TableDataRepository(self.db_connection, schema_name)
         self.extractor = AIExtractor()
         self.text_extractor = TextExtractor()
+        self.table_extractor = TableExtractor()
         
         print(f"✓ Paper processor initialized with schema '{schema_name}'")
     
@@ -81,39 +83,68 @@ class PaperProcessor:
             print("\n📋 Step 4: Ensuring database schema exists...")
             self.schema_manager.setup_complete_schema(self.schema_name)
             
-            # Step 5: Check for duplicate papers and get user preference
+            # Step 5: Check for duplicate papers and get user preferences
             print("\n🔍 Step 5: Checking for duplicate papers...")
-            exists, should_overwrite = self._check_paper_exists(paper_metadata)
+            exists, overwrite_choices = self._check_paper_exists(paper_metadata)
             
-            if exists and not should_overwrite:
-                print("⏭️  Skipping processing - keeping existing paper.")
+            if exists and not any(overwrite_choices.values()):
+                print("⏭️  Skipping processing - keeping all existing data.")
                 return True
             
-            # Step 6: Handle overwrite if needed
-            if exists and should_overwrite:
-                print("\n🔄 Step 6: Cleaning up existing data for overwrite...")
-                # Delete existing text sections first (due to foreign key constraint)
-                if self.text_sections_repository.exists_by_paper_id(paper_metadata.id):
+            # Step 6: Handle selective overwrite if needed
+            if exists:
+                print("\n🔄 Step 6: Cleaning up existing data for selective overwrite...")
+                
+                # Delete existing text sections if user chose to overwrite them
+                if overwrite_choices.get('text_sections', False):
                     print("   Deleting existing text sections...")
                     self.text_sections_repository.delete_by_paper_id(paper_metadata.id)
+                
+                # Delete existing tables if user chose to overwrite them
+                if overwrite_choices.get('tables', False):
+                    print("   Deleting existing tables...")
+                    self.table_data_repository.delete_tables_by_paper_id(paper_metadata.id)
             
-            # Step 7: Insert/Update paper metadata
-            print(f"\n💾 Step 7: {'Updating' if exists and should_overwrite else 'Inserting'} paper metadata...")
-            success = self._save_paper_metadata(paper_metadata, update_existing=exists and should_overwrite)
-            if not success:
-                return False
-            
-            # Step 8: Extract and save text sections
-            print("\n📝 Step 8: Extracting text sections using AI...")
-            text_sections = self.text_extractor.extract_text_sections(paper_content, paper_metadata.id)
-            
-            if text_sections:
-                print("\n💾 Step 9: Saving text sections to database...")
-                sections_success = self.text_sections_repository.save_all(text_sections)
-                if not sections_success:
-                    print("⚠️  Warning: Failed to save some text sections")
+            # Step 7: Insert/Update paper metadata if needed
+            if not exists or overwrite_choices.get('metadata', False):
+                print(f"\n💾 Step 7: {'Updating' if exists else 'Inserting'} paper metadata...")
+                success = self._save_paper_metadata(paper_metadata, update_existing=exists)
+                if not success:
+                    return False
             else:
-                print("⚠️  Warning: No text sections extracted")
+                print("\n⏭️  Step 7: Skipping paper metadata (keeping existing)")
+            
+            # Step 8: Extract and save text sections if needed
+            if not exists or overwrite_choices.get('text_sections', False):
+                print("\n📝 Step 8: Extracting text sections using AI...")
+                text_sections = self.text_extractor.extract_text_sections(paper_content, paper_metadata.id)
+                
+                if text_sections:
+                    print("\n💾 Step 9: Saving text sections to database...")
+                    sections_success = self.text_sections_repository.save_all(text_sections)
+                    if not sections_success:
+                        print("⚠️  Warning: Failed to save some text sections")
+                else:
+                    print("⚠️  Warning: No text sections extracted")
+            else:
+                print("\n⏭️  Step 8-9: Skipping text sections (keeping existing)")
+                text_sections = []
+            
+            # Step 10: Extract and save tables if needed
+            if not exists or overwrite_choices.get('tables', False):
+                print("\n📊 Step 10: Extracting tables using AI...")
+                tables = self.table_extractor.extract_tables(paper_content, paper_metadata.id)
+                
+                if tables:
+                    print("\n💾 Step 11: Saving tables to database...")
+                    tables_success = self._save_all_tables(tables)
+                    if not tables_success:
+                        print("⚠️  Warning: Failed to save some tables")
+                else:
+                    print("⚠️  Warning: No tables found or extracted")
+            else:
+                print("\n⏭️  Step 10-11: Skipping tables (keeping existing)")
+                tables = []
             
             # Commit the transaction
             if self.db_connection.connection:
@@ -123,6 +154,7 @@ class PaperProcessor:
             print("🎉 Paper processing completed successfully!")
             print(f"   📄 Paper metadata: {'Updated' if exists else 'Inserted'}")
             print(f"   📝 Text sections: {len(text_sections)} sections processed")
+            print(f"   📊 Tables: {len(tables)} tables processed")
             print("=" * 60)
             
             return True
@@ -137,15 +169,19 @@ class PaperProcessor:
         finally:
             self.close_connections()
     
-    def _check_paper_exists(self, paper_metadata: PaperMetadata) -> Tuple[bool, bool]:
+    def _check_paper_exists(self, paper_metadata: PaperMetadata) -> Tuple[bool, Dict[str, bool]]:
         """
-        Check if paper already exists in database and ask user preference.
+        Check if paper already exists in database and ask user preference with modular choices.
         
         Args:
             paper_metadata: Paper metadata to check
             
         Returns:
-            Tuple of (exists, should_overwrite)
+            Tuple of (exists, overwrite_choices_dict)
+            where overwrite_choices_dict contains:
+            - 'metadata': whether to overwrite paper metadata
+            - 'text_sections': whether to overwrite text sections  
+            - 'tables': whether to overwrite tables
         """
         doi = paper_metadata.doi
         title = paper_metadata.title
@@ -170,27 +206,47 @@ class PaperProcessor:
                 print(f"   DOI: {existing_paper['doi']}")
         
         if existing_paper:
-            # Ask user what to do
-            print("\n❓ What would you like to do?")
-            print("   1. Skip processing (keep existing paper)")
-            print("   2. Overwrite existing paper and its text sections")
+            # Store paper ID for potential updates
+            paper_metadata.id = existing_paper['id']
+            
+            # Get existing data counts for informed decision
+            text_sections_count = self.text_sections_repository.count_sections_by_paper_id(existing_paper['id'])
+            tables_count = self.table_data_repository.count_tables_by_paper_id(existing_paper['id'])
+            
+            print(f"\n📊 Existing data:")
+            print(f"   Text sections: {text_sections_count}")
+            print(f"   Tables: {tables_count}")
+            
+            # Ask user what to overwrite with modular choices
+            print("\n❓ What would you like to overwrite?")
+            print("   1. Skip processing (keep all existing data)")
+            print("   2. Overwrite text sections only")
+            print("   3. Overwrite tables only") 
+            print("   4. Overwrite text sections and tables")
+            print("   5. Overwrite everything (metadata, text sections, and tables)")
             
             while True:
                 try:
-                    choice = input("Enter choice (1 or 2): ").strip()
+                    choice = input("Enter choice (1-5): ").strip()
+                    
                     if choice == "1":
-                        return True, False  # exists, don't overwrite
+                        return True, {"metadata": False, "text_sections": False, "tables": False}
                     elif choice == "2":
-                        # Store paper ID for potential text sections cleanup
-                        paper_metadata.id = existing_paper['id']
-                        return True, True  # exists, overwrite
+                        return True, {"metadata": True, "text_sections": True, "tables": False}
+                    elif choice == "3":
+                        return True, {"metadata": True, "text_sections": False, "tables": True}
+                    elif choice == "4":
+                        return True, {"metadata": True, "text_sections": True, "tables": True}
+                    elif choice == "5":
+                        return True, {"metadata": True, "text_sections": True, "tables": True}
                     else:
-                        print("Invalid choice. Please enter 1 or 2.")
+                        print("Invalid choice. Please enter 1, 2, 3, 4, or 5.")
+                        
                 except KeyboardInterrupt:
                     print("\n⏭️  Operation cancelled. Skipping paper processing.")
-                    return True, False
+                    return True, {"metadata": False, "text_sections": False, "tables": False}
         
-        return False, False  # doesn't exist
+        return False, {"metadata": True, "text_sections": True, "tables": True}  # doesn't exist, process everything
     
     def _save_paper_metadata(self, paper_metadata: PaperMetadata, update_existing: bool = False) -> bool:
         """
@@ -210,6 +266,32 @@ class PaperProcessor:
                 return self.repository.save(paper_metadata)
         except Exception as e:
             print(f"✗ Error saving paper metadata: {e}")
+            return False
+    
+    def _save_all_tables(self, tables: List[TableData]) -> bool:
+        """
+        Save all tables to the database.
+        
+        Args:
+            tables: List of TableData objects to save
+            
+        Returns:
+            True if all tables saved successfully, False otherwise
+        """
+        try:
+            success_count = 0
+            for table in tables:
+                if self.table_data_repository.save_table(table):
+                    print(f"✓ Table '{table.title}' saved successfully")
+                    success_count += 1
+                else:
+                    print(f"✗ Failed to save table '{table.title}'")
+            
+            print(f"✓ Successfully saved {success_count} of {len(tables)} tables")
+            return success_count == len(tables)
+            
+        except Exception as e:
+            print(f"✗ Error saving tables: {e}")
             return False
     
     def list_papers(self) -> None:

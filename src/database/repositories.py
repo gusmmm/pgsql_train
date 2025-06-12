@@ -10,7 +10,7 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from .connection import DatabaseConnection
-from ..models import PaperMetadata, TextSection
+from ..models import PaperMetadata, TextSection, TableData
 
 
 class PaperMetadataRepository:
@@ -634,3 +634,215 @@ class TextSectionsRepository:
             return False
         finally:
             cursor.close()
+
+    def count_sections_by_paper_id(self, paper_id: int) -> int:
+        """
+        Count text sections associated with a paper.
+        
+        Args:
+            paper_id: The paper ID to count sections for
+            
+        Returns:
+            Number of text sections for the paper
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return 0
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            count_sql = f"SELECT COUNT(*) FROM {self.schema_name}.{self.table_name} WHERE paper_id = %s"
+            cursor.execute(count_sql, (paper_id,))
+            result = cursor.fetchone()
+            cursor.close()
+            
+            return result[0] if result else 0
+            
+        except Exception as e:
+            print(f"✗ Error counting text sections: {e}")
+            return 0
+
+
+class TableDataRepository:
+    """
+    Repository class for table data database operations.
+    
+    This class follows the project's repository pattern for data access,
+    providing a clean interface for table data CRUD operations with proper
+    error handling and transaction management.
+    """
+    
+    def __init__(self, db_connection: DatabaseConnection, schema_name: str = 'papers'):
+        """
+        Initialize the table data repository.
+        
+        Args:
+            db_connection: Database connection instance
+            schema_name: Name of the schema containing the table_data table
+        """
+        self.db_connection = db_connection
+        self.schema_name = schema_name
+    
+    def save_table(self, table_data: 'TableData') -> bool:
+        """
+        Save a table to the database.
+        
+        Args:
+            table_data: TableData instance to save
+            
+        Returns:
+            Boolean indicating success
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            insert_sql = f"""
+            INSERT INTO {self.schema_name}.table_data (
+                id, paper_id, table_number, title, raw_content, 
+                summary, context_analysis, statistical_findings, keywords,
+                column_count, row_count, extracted_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(insert_sql, (
+                table_data.id,
+                table_data.paper_id,
+                table_data.table_number,
+                table_data.title,
+                table_data.raw_content,
+                table_data.summary,
+                table_data.context_analysis,
+                table_data.statistical_findings,
+                table_data.keywords,
+                table_data.column_count,
+                table_data.row_count,
+                table_data.extracted_at
+            ))
+            
+            cursor.close()
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error saving table data: {e}")
+            return False
+    
+    def delete_tables_by_paper_id(self, paper_id: int) -> bool:
+        """
+        Delete all tables associated with a paper.
+        
+        Args:
+            paper_id: The paper ID whose tables should be deleted
+            
+        Returns:
+            Boolean indicating success
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            delete_sql = f"DELETE FROM {self.schema_name}.table_data WHERE paper_id = %s"
+            cursor.execute(delete_sql, (paper_id,))
+            deleted_count = cursor.rowcount
+            
+            cursor.close()
+            
+            if deleted_count > 0:
+                print(f"✓ Deleted {deleted_count} tables for paper ID {paper_id}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error deleting tables: {e}")
+            return False
+    
+    def count_tables_by_paper_id(self, paper_id: int) -> int:
+        """
+        Count tables associated with a paper.
+        
+        Args:
+            paper_id: The paper ID to count tables for
+            
+        Returns:
+            Number of tables for the paper
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return 0
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            count_sql = f"SELECT COUNT(*) FROM {self.schema_name}.table_data WHERE paper_id = %s"
+            cursor.execute(count_sql, (paper_id,))
+            result = cursor.fetchone()
+            cursor.close()
+            
+            return result[0] if result else 0
+            
+        except Exception as e:
+            print(f"✗ Error counting tables: {e}")
+            return 0
+    
+    def find_tables_by_paper_id(self, paper_id: int) -> List['TableData']:
+        """
+        Find all tables associated with a paper.
+        
+        Args:
+            paper_id: The paper ID to find tables for
+            
+        Returns:
+            List of TableData objects
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return []
+        
+        try:
+            from ..models.table_data import TableData
+            
+            cursor = self.db_connection.connection.cursor()
+            
+            select_sql = f"""
+            SELECT id, paper_id, table_number, title, raw_content, 
+                   summary, context_analysis, statistical_findings, keywords,
+                   column_count, row_count, extracted_at
+            FROM {self.schema_name}.table_data 
+            WHERE paper_id = %s 
+            ORDER BY table_number
+            """
+            
+            cursor.execute(select_sql, (paper_id,))
+            rows = cursor.fetchall()
+            cursor.close()
+            
+            tables = []
+            for row in rows:
+                table_data = TableData(
+                    id=row[0],
+                    paper_id=row[1],
+                    table_number=row[2],
+                    title=row[3],
+                    raw_content=row[4],
+                    summary=row[5],
+                    context_analysis=row[6],
+                    statistical_findings=row[7],
+                    keywords=row[8] or [],
+                    column_count=row[9],
+                    row_count=row[10],
+                    extracted_at=row[11]
+                )
+                tables.append(table_data)
+            
+            return tables
+            
+        except Exception as e:
+            print(f"✗ Error finding tables: {e}")
+            return []
