@@ -1,0 +1,31 @@
+{
+  "id": 552305124648492477,
+  "paper_id": 12345,
+  "reference_count": 22,
+  "references": [
+    "Alexandrou E, Ray-Barruel G, Carr PJ, et al. International prevalence of the use of peripheral intravenous catheters. J Hosp Med . 2015;10(8):530-533. doi:10.1002/jhm.2389",
+    "Zingg W, Metsini A, Balmelli C, et al; Swissnoso Network. National point prevalence survey on healthcareassociated infections in acute care hospitals, Switzerland, 2017. Euro Surveill . 2019;24(32):1800603. doi:10.2807/ 1560-7917.ES.2019.24.32.1800603",
+    "Hadaway L. Short peripheral intravenous catheters and infections. J Infus Nurs . 2012;35(4):230-240. doi:10. 1097/NAN.0b013e31825af099",
+    "Mermel LA. Short-term peripheral venous catheter-related bloodstream infections: a systematic review. Clin Infect Dis . 2017;65(10):1757-1762. doi:10.1093/cid/cix562",
+    "Olaechea PM, Palomar M, Álvarez-Lerma F, Otal JJ, Insausti J, López-Pueyo MJ; ENVIN-HELICS Group. Morbidity and mortality associated with primary and catheter-related bloodstream infections in critically ill patients. Rev Esp Quimioter . 2013;26(1):21-29.",
+    "Lim S, Gangoli G, Adams E, et al. Increased clinical and economic burden associated with peripheral intravenous catheter-related complications: analysis of a US hospital discharge database. Inquiry . 2019;56:1-14. doi:10.1177/ 0046958019875562",
+    "Drugeon B, Guenezan J, Pichon M, et al. Incidence, complications, and costs of peripheral venous catheterrelated bacteraemia: a retrospective, single-centre study. J Hosp Infect . 2023;135:67-73. doi:10.1016/j.jhin.2023. 02.012",
+    "Webster J, Osborne S, Rickard CM, Marsh N. Clinically-indicated replacement versus routine replacement of peripheral venous catheters. Cochrane Database Syst Rev . 2019;1(1):CD007798. doi:10.1002/14651858. CD007798.pub5",
+    "Buetti N, Abbas M, Pittet D, et al. Comparison of routine replacement with clinically indicated replacement of peripheral intravenous catheters. JAMAIntern Med . 2021;181(11):1471-1478. doi:10.1001/jamainternmed. 2021.5345",
+    "von Elm E, Altman DG, Egger M, Pocock SJ, Gøtzsche PC, Vandenbroucke JP; STROBE Initiative. Strengthening the Reporting of Observational Studies in Epidemiology (STROBE) statement: guidelines for reporting observational studies. BMJ . 2007;335(7624):806-808. doi:10.1136/bmj.39335.541782.AD",
+    "Surveillance of healthcare-associated infections and prevention indicators in European intensive care units. European Centre for Disease Prevention and Control. 2017. Accessed October 17, 2024. https://www.ecdc.europa. eu/sites/default/files/documents/HAI-Net-ICU-protocol-v2.2_0.pdf",
+    "Müller HG, Wang JL. Hazard rate estimation under random censoring with varying kernels and bandwidths. Biometrics . 1994;50(1):61-76. doi:10.2307/2533197",
+    "Rickard CM, Marsh NM. Annals for hospitalists inpatient notes-the other catheter-the mighty peripheral IV. Ann Intern Med . 2017;167(10):HO2-HO3. doi:10.7326/M17-2771",
+    "Dobrescu A, Constantin AM, Pinte L, et al. Effectiveness and safety of measures to prevent infections and other complications associated with peripheral intravenous catheters: a systematic review and meta-analysis. Clin Infect Dis . 2024;78(6):1640-1655. doi:10.1093/cid/ciae195",
+    "Guidelines for the prevention of bloodstream infections and other infections associated with the use of intravascular catheters: part I: peripheral catheters. World Health Organization. May 12, 2024. Accessed September 23, 2024. https://www.who.int/publications/i/item/9789240093829",
+    "Nyström B, Larsen SO, Dankert J, et al; The European Working Party on Control of Hospital Infections. Bacteraemia in surgical patients with intravenous devices: a European multicentre incidence study. J Hosp Infect . 1983;4(4):338-349. doi:10.1016/0195-6701(83)90004-X",
+    "Collignon PJ, Munro R, Sorrell TC. Systemic sepsis and intravenous devices: a prospective survey. MedJAust . 1984;141(6):345-348. doi:10.5694/j.1326-5377.1984.tb132802.x",
+    "Fry DE, Fry RV, Borzotta AP. Nosocomial blood-borne infection secondary to intravascular devices. AmJSurg . 1994;167(2):268-272. doi:10.1016/0002-9610(94)90090-6",
+    "Lolom I, Deblangy C, Capelle A, et al. Effect of a long-term quality improvement program on the risk of infection related to peripheral venous catheters. Article in French. Presse Med . 2009;38(1):34-42. doi:10.1016/j. lpm.2008.03.017",
+    "Freixas N, Bella F, Limón E, Pujol M, Almirante B, Gudiol F. Impact of a multimodal intervention to reduce bloodstream infections related to vascular catheters in non-ICU wards: a multicentre study. Clin Microbiol Infect . 2013;19(9):838-844. doi:10.1111/1469-0691.12049",
+    "Guenezan J, Marjanovic N, Drugeon B, et al; CLEAN-3 trial investigators. Chlorhexidine plus alcohol versus povidone iodine plus alcohol, combined or not with innovative devices, for prevention of short-term peripheral venous catheter infection and failure (CLEAN 3 study): an investigator-initiated, open-label, single centre, randomised-controlled, two-by-two factorial trial. Lancet Infect Dis . 2021;21(7):1038-1048. doi:10.1016/S14733099(20)30738-6",
+    "Timsit JF, Mimoz O, Mourvillier B, et al. Randomized controlled trial of chlorhexidine dressing and highly adhesive dressing for preventing catheter-related infections in critically ill adults. AmJRespir Crit Care Med . 2012; 186(12):1272-1278. doi:10.1164/rccm.201206-1038OC"
+  ],
+  "extracted_at": "2025-06-12T13:38:47.904242",
+  "source_file": "/home/gusmmm/Desktop/pgsql_train/docs/zanella_2025-with-images.md"
+}

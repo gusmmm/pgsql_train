@@ -10,7 +10,7 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from .connection import DatabaseConnection
-from ..models import PaperMetadata, TextSection, TableData, ImageData
+from ..models import PaperMetadata, TextSection, TableData, ImageData, ReferencesData
 
 
 class PaperMetadataRepository:
@@ -1124,3 +1124,177 @@ class ImageRepository:
         except Exception as e:
             print(f"✗ Error finding images: {e}")
             return []
+
+
+class ReferencesRepository:
+    """
+    Repository for paper references database operations.
+    
+    This class encapsulates all database operations related to paper references,
+    following the repository pattern for clean separation of concerns.
+    """
+    
+    def __init__(self, db_connection: DatabaseConnection, schema_name: str = 'papers'):
+        """
+        Initialize the repository.
+        
+        Args:
+            db_connection: DatabaseConnection instance
+            schema_name: Name of the schema (default: 'papers')
+        """
+        self.db_connection = db_connection
+        self.schema_name = schema_name
+        self.table_name = 'paper_references'
+    
+    def save_references(self, references_data) -> bool:
+        """
+        Save references to the database.
+        
+        Args:
+            references_data: ReferencesData object to save
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            insert_sql = f"""
+            INSERT INTO {self.schema_name}.{self.table_name} (
+                id, paper_id, reference_list, reference_count, extracted_at
+            ) VALUES (
+                %s, %s, %s, %s, %s
+            )
+            """
+            
+            cursor.execute(insert_sql, (
+                references_data.id,
+                references_data.paper_id,
+                references_data.references,
+                references_data.reference_count,
+                references_data.extracted_at
+            ))
+            
+            cursor.close()
+            print(f"✓ References saved to database ({references_data.reference_count} references)")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error saving references: {e}")
+            return False
+    
+    def delete_by_paper_id(self, paper_id: int) -> bool:
+        """
+        Delete references for a specific paper.
+        
+        Args:
+            paper_id: Paper ID to delete references for
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            delete_sql = f"""
+            DELETE FROM {self.schema_name}.{self.table_name} 
+            WHERE paper_id = %s
+            """
+            
+            cursor.execute(delete_sql, (paper_id,))
+            deleted_count = cursor.rowcount
+            cursor.close()
+            
+            if deleted_count > 0:
+                print(f"✓ Deleted existing references for paper {paper_id}")
+            else:
+                print(f"✓ No existing references found for paper {paper_id}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error deleting references for paper {paper_id}: {e}")
+            return False
+    
+    def exists_for_paper(self, paper_id: int) -> bool:
+        """
+        Check if references exist for a paper.
+        
+        Args:
+            paper_id: Paper ID to check
+            
+        Returns:
+            True if references exist, False otherwise
+        """
+        if not self.db_connection.connection:
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            cursor.execute(f"""
+                SELECT EXISTS(
+                    SELECT 1 FROM {self.schema_name}.{self.table_name} 
+                    WHERE paper_id = %s
+                )
+            """, (paper_id,))
+            
+            result = cursor.fetchone()
+            cursor.close()
+            
+            return result[0] if result else False
+            
+        except Exception as e:
+            print(f"✗ Error checking for existing references: {e}")
+            return False
+    
+    def find_by_paper_id(self, paper_id: int):
+        """
+        Find references for a specific paper.
+        
+        Args:
+            paper_id: Paper ID to find references for
+            
+        Returns:
+            ReferencesData object or None if not found
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return None
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            select_sql = f"""
+            SELECT id, paper_id, references, reference_count, extracted_at
+            FROM {self.schema_name}.{self.table_name} 
+            WHERE paper_id = %s
+            """
+            
+            cursor.execute(select_sql, (paper_id,))
+            row = cursor.fetchone()
+            cursor.close()
+            
+            if row:
+                from ..models import ReferencesData
+                return ReferencesData(
+                    id=row[0],
+                    paper_id=row[1],
+                    references=row[2] or [],
+                    reference_count=row[3],
+                    extracted_at=row[4]
+                )
+            else:
+                return None
+            
+        except Exception as e:
+            print(f"✗ Error finding references: {e}")
+            return None

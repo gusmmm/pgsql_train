@@ -9,9 +9,9 @@ import os
 import sys
 from typing import Optional, Tuple, Dict, List
 
-from .models import PaperMetadata, TextSection, TableData, ImageData
-from .extraction import AIExtractor, TextExtractor, TableExtractor, ImageExtractor
-from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository, TableDataRepository, ImageRepository
+from .models import PaperMetadata, TextSection, TableData, ImageData, ReferencesData
+from .extraction import AIExtractor, TextExtractor, TableExtractor, ImageExtractor, ReferencesExtractor
+from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository, TableDataRepository, ImageRepository, ReferencesRepository
 from .utils import FileLoader
 
 
@@ -39,10 +39,12 @@ class PaperProcessor:
         self.text_sections_repository = TextSectionsRepository(self.db_connection, schema_name)
         self.table_data_repository = TableDataRepository(self.db_connection, schema_name)
         self.image_repository = ImageRepository(self.db_connection, schema_name)
+        self.references_repository = ReferencesRepository(self.db_connection, schema_name)
         self.extractor = AIExtractor()
         self.text_extractor = TextExtractor()
         self.table_extractor = TableExtractor()
         self.image_extractor = ImageExtractor()
+        self.references_extractor = ReferencesExtractor()
         
         print(f"✓ Paper processor initialized with schema '{schema_name}'")
     
@@ -111,6 +113,12 @@ class PaperProcessor:
                 if overwrite_choices.get('tables', False):
                     print("   Deleting existing tables...")
                     self.table_data_repository.delete_tables_by_paper_id(paper_metadata.id)
+                
+                # Delete existing references if user chose to overwrite them
+                if overwrite_choices.get('references', False):
+                    print("   Deleting existing references...")
+                    self.references_repository.delete_by_paper_id(paper_metadata.id)
+                    self.table_data_repository.delete_tables_by_paper_id(paper_metadata.id)
             
             # Step 7: Insert/Update paper metadata if needed
             if not exists or overwrite_choices.get('metadata', False):
@@ -169,6 +177,22 @@ class PaperProcessor:
                 print("\n⏭️  Step 12-13: Skipping images (keeping existing)")
                 images = []
             
+            # Step 14: Extract and save references if needed
+            if not exists or overwrite_choices.get('references', False):
+                print("\n📚 Step 14: Extracting references using AI...")
+                references = self.references_extractor.extract_references(paper_content, paper_metadata.id)
+                
+                if references:
+                    print("\n💾 Step 15: Saving references to database...")
+                    references_success = self.references_repository.save_references(references)
+                    if not references_success:
+                        print("⚠️  Warning: Failed to save references")
+                else:
+                    print("⚠️  Warning: No references found or extracted")
+            else:
+                print("\n⏭️  Step 14-15: Skipping references (keeping existing)")
+                references = None
+            
             # Commit the transaction
             if self.db_connection.connection:
                 self.db_connection.connection.commit()
@@ -179,6 +203,7 @@ class PaperProcessor:
             print(f"   📝 Text sections: {len(text_sections)} sections processed")
             print(f"   📊 Tables: {len(tables)} tables processed")
             print(f"   🖼️ Images: {len(images)} images processed")
+            print(f"   📚 References: {references.reference_count if references else 0} references processed")
             print("=" * 60)
             
             return True
@@ -285,6 +310,101 @@ class PaperProcessor:
         finally:
             self.close_connections()
     
+    def process_references_only(self, paper_file_path: str) -> bool:
+        """
+        Process only references from a paper file.
+        
+        Args:
+            paper_file_path: Path to the paper file to process
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        print("🚀 Starting references-only processing pipeline...")
+        print("=" * 60)
+        
+        try:
+            # Step 1: Validate and load paper content
+            print("\n📖 Step 1: Loading paper content...")
+            if not FileLoader.validate_file_exists(paper_file_path):
+                print(f"✗ Error: Paper file does not exist: {paper_file_path}")
+                return False
+            
+            paper_content = FileLoader.load_paper_content(paper_file_path)
+            if not paper_content:
+                print("✗ Failed to load paper content")
+                return False
+            
+            # Step 2: Setup database connection
+            print("\n🗄️  Step 2: Setting up database connection...")
+            self.db_connection.connect()
+            
+            print("\n📋 Step 3: Ensuring database schema exists...")
+            self.schema_manager.setup_complete_schema(self.schema_name)
+            
+            # Step 4: Check if paper exists in database
+            print("\n🔍 Step 4: Looking for existing paper in database...")
+            
+            # Try to find paper by filename first
+            existing_paper = self.repository.find_by_source_file(paper_file_path)
+            
+            if not existing_paper:
+                print("✗ Paper not found in database. Please process the paper metadata first using the main processor.")
+                return False
+            
+            paper_id = existing_paper['id']
+            print(f"✓ Found existing paper with ID: {paper_id}")
+            print(f"   Title: {existing_paper['title']}")
+            
+            # Step 5: Check for existing references
+            existing_references = self.references_repository.find_by_paper_id(paper_id)
+            if existing_references:
+                print(f"\n⚠️  Found existing references for this paper.")
+                overwrite = input("Do you want to overwrite existing references? (y/N): ").strip().lower()
+                if overwrite in ['y', 'yes']:
+                    print("   Deleting existing references...")
+                    self.references_repository.delete_by_paper_id(paper_id)
+                else:
+                    print("   Skipping references processing to preserve existing data.")
+                    return True
+            
+            # Step 6: Extract and save references
+            print("\n📚 Step 6: Extracting references using AI...")
+            references_data = self.references_extractor.extract_references(paper_content, paper_id)
+            
+            if references_data:
+                print("\n💾 Step 7: Saving references to database...")
+                references_success = self.references_repository.save_references(references_data)
+                if not references_success:
+                    print("⚠️  Warning: Failed to save references")
+                    return False
+                
+                print(f"✓ Saved references with {len(references_data.references)} items")
+            else:
+                print("⚠️  Warning: No references found or extracted")
+            
+            # Commit the transaction
+            if self.db_connection.connection:
+                self.db_connection.connection.commit()
+                
+            print("\n" + "=" * 60)
+            print("🎉 References processing completed successfully!")
+            if references_data:
+                print(f"   📚 References: {len(references_data.references)} references processed")
+            print("=" * 60)
+            
+            return True
+            
+        except Exception as e:
+            print(f"\n✗ Critical error in references processing pipeline: {e}")
+            # Rollback on error
+            if self.db_connection.connection:
+                self.db_connection.connection.rollback()
+            return False
+            
+        finally:
+            self.close_connections()
+
     def _check_paper_exists(self, paper_metadata: PaperMetadata) -> Tuple[bool, Dict[str, bool]]:
         """
         Check if paper already exists in database and ask user preference with modular choices.
@@ -299,6 +419,7 @@ class PaperProcessor:
             - 'text_sections': whether to overwrite text sections  
             - 'tables': whether to overwrite tables
             - 'images': whether to overwrite images
+            - 'references': whether to overwrite references
         """
         doi = paper_metadata.doi
         title = paper_metadata.title
@@ -330,11 +451,13 @@ class PaperProcessor:
             text_sections_count = self.text_sections_repository.count_sections_by_paper_id(existing_paper['id'])
             tables_count = self.table_data_repository.count_tables_by_paper_id(existing_paper['id'])
             images_count = len(self.image_repository.find_by_paper_id(existing_paper['id']))
+            references_exist = self.references_repository.exists_for_paper(existing_paper['id'])
             
             print(f"\n📊 Existing data:")
             print(f"   Text sections: {text_sections_count}")
             print(f"   Tables: {tables_count}")
             print(f"   Images: {images_count}")
+            print(f"   References: {'Yes' if references_exist else 'No'}")
             
             # Ask user what to overwrite with modular choices
             print("\n❓ What would you like to overwrite?")
@@ -342,39 +465,51 @@ class PaperProcessor:
             print("   2. Overwrite text sections only")
             print("   3. Overwrite tables only") 
             print("   4. Overwrite images only")
-            print("   5. Overwrite text sections and tables")
-            print("   6. Overwrite text sections and images")
-            print("   7. Overwrite tables and images")
-            print("   8. Overwrite everything (metadata, text sections, tables, and images)")
+            print("   5. Overwrite references only")
+            print("   6. Overwrite text sections and tables")
+            print("   7. Overwrite text sections and images")
+            print("   8. Overwrite text sections and references")
+            print("   9. Overwrite tables and images")
+            print("   10. Overwrite tables and references")
+            print("   11. Overwrite images and references")
+            print("   12. Overwrite everything (metadata, text sections, tables, images, and references)")
             
             while True:
                 try:
-                    choice = input("Enter choice (1-8): ").strip()
+                    choice = input("Enter choice (1-12): ").strip()
                     
                     if choice == "1":
-                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": False}
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": False, "references": False}
                     elif choice == "2":
-                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": False}
+                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": False, "references": False}
                     elif choice == "3":
-                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": False}
+                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": False, "references": False}
                     elif choice == "4":
-                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": True}
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": True, "references": False}
                     elif choice == "5":
-                        return True, {"metadata": False, "text_sections": True, "tables": True, "images": False}
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": False, "references": True}
                     elif choice == "6":
-                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": True}
+                        return True, {"metadata": False, "text_sections": True, "tables": True, "images": False, "references": False}
                     elif choice == "7":
-                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": True}
+                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": True, "references": False}
                     elif choice == "8":
-                        return True, {"metadata": True, "text_sections": True, "tables": True, "images": True}
+                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": False, "references": True}
+                    elif choice == "9":
+                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": True, "references": False}
+                    elif choice == "10":
+                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": False, "references": True}
+                    elif choice == "11":
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": True, "references": True}
+                    elif choice == "12":
+                        return True, {"metadata": True, "text_sections": True, "tables": True, "images": True, "references": True}
                     else:
-                        print("Invalid choice. Please enter 1, 2, 3, 4, 5, 6, 7, or 8.")
+                        print("Invalid choice. Please enter a number between 1-12.")
                         
                 except KeyboardInterrupt:
                     print("\n⏭️  Operation cancelled. Skipping paper processing.")
-                    return True, {"metadata": False, "text_sections": False, "tables": False, "images": False}
+                    return True, {"metadata": False, "text_sections": False, "tables": False, "images": False, "references": False}
         
-        return False, {"metadata": True, "text_sections": True, "tables": True, "images": True}  # doesn't exist, process everything
+        return False, {"metadata": True, "text_sections": True, "tables": True, "images": True, "references": True}  # doesn't exist, process everything
     
     def _save_paper_metadata(self, paper_metadata: PaperMetadata, update_existing: bool = False) -> bool:
         """

@@ -523,6 +523,72 @@ class SchemaManager:
         finally:
             cursor.close()
 
+    def create_paper_references_table(self, schema_name: str = 'papers') -> None:
+        """
+        Create the paper_references table for storing extracted references/bibliography.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {schema_name}.paper_references (
+                -- Core identification
+                id BIGINT PRIMARY KEY,  -- 64-bit unique identifier from ReferencesData
+                paper_id BIGINT REFERENCES {schema_name}.paper_metadata(id) ON DELETE CASCADE,
+                
+                -- References data
+                reference_list TEXT[] NOT NULL,  -- Array of reference strings as they appear in original text
+                reference_count INTEGER NOT NULL DEFAULT 0,
+                
+                -- Audit fields
+                extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Constraints
+                UNIQUE(paper_id)  -- One references list per paper
+            );
+            """
+            
+            cursor.execute(create_table_sql)
+            print(f"Table '{schema_name}.paper_references' created successfully.")
+        finally:
+            cursor.close()
+
+    def create_references_indexes(self, schema_name: str = 'papers') -> None:
+        """
+        Create useful indexes for the paper_references table.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        indexes = [
+            f"CREATE INDEX IF NOT EXISTS idx_paper_references_paper_id ON {schema_name}.paper_references(paper_id);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_references_count ON {schema_name}.paper_references(reference_count);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_references_extracted_at ON {schema_name}.paper_references(extracted_at);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_references_text ON {schema_name}.paper_references USING GIN(reference_list);"
+        ]
+        
+        cursor = self.db_connection.connection.cursor()
+        try:
+            for index_sql in indexes:
+                try:
+                    cursor.execute(index_sql)
+                    index_name = index_sql.split('idx_')[1].split(' ')[0]
+                    print(f"References index created: {index_name}")
+                except Exception as e:
+                    print(f"Warning: Could not create references index: {e}")
+        finally:
+            cursor.close()
+
     def setup_complete_schema(self, schema_name: str = 'papers') -> None:
         """
         Set up the complete database schema for paper metadata.
@@ -589,21 +655,6 @@ class SchemaManager:
             else:
                 print(f"Table '{schema_name}.table_data' already exists.")
             
-            # Check and create table_data table if needed
-            if not self.check_table_exists('table_data', schema_name):
-                print(f"Creating table '{schema_name}.table_data'...")
-                self.create_table_data_table(schema_name)
-                
-                # Create indexes for table_data
-                print("Creating indexes for table_data...")
-                self.create_table_data_indexes(schema_name)
-                
-                # Create update trigger for table_data
-                print("Creating update trigger for table_data...")
-                self.create_table_data_trigger(schema_name)
-            else:
-                print(f"Table '{schema_name}.table_data' already exists.")
-            
             # Check and create paper_images table if needed
             if not self.check_table_exists('paper_images', schema_name):
                 print(f"Creating table '{schema_name}.paper_images'...")
@@ -614,6 +665,17 @@ class SchemaManager:
                 self.create_image_indexes(schema_name)
             else:
                 print(f"Table '{schema_name}.paper_images' already exists.")
+            
+            # Check and create paper_references table if needed
+            if not self.check_table_exists('paper_references', schema_name):
+                print(f"Creating table '{schema_name}.paper_references'...")
+                self.create_paper_references_table(schema_name)
+                
+                # Create indexes for paper_references
+                print("Creating indexes for paper_references...")
+                self.create_references_indexes(schema_name)
+            else:
+                print(f"Table '{schema_name}.paper_references' already exists.")
             
             # Commit all changes
             if self.db_connection.connection:

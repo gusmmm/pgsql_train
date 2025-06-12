@@ -2,7 +2,8 @@
 """
 Enhanced main entry point for the paper processing system.
 
-This script provides a command-line interface with multiple processing options
+This script provides a command-li            else:
+                print("Invalid choice. Please enter 1, 2, 3, 4, 5, or 6.") interface with multiple processing options
 including full processing, image-only processing, and other selective options.
 """
 
@@ -21,11 +22,12 @@ def show_menu():
     """Display the main menu options."""
     print("\n🚀 Paper Processing System - Enhanced Menu")
     print("=" * 50)
-    print("1. Full paper processing (metadata + text + tables + images)")
+    print("1. Full paper processing (metadata + text + tables + images + references)")
     print("2. Process images only (requires existing paper in database)")
     print("3. Process text sections only (requires existing paper in database)")
     print("4. Process tables only (requires existing paper in database)")
-    print("5. Exit")
+    print("5. Process references only (requires existing paper in database)")
+    print("6. Exit")
     print("=" * 50)
 
 
@@ -60,10 +62,10 @@ def main():
             show_menu()
             choice = input("Enter your choice (1-5): ").strip()
             
-            if choice == "5":
+            if choice == "6":
                 print("👋 Goodbye!")
                 sys.exit(0)
-            elif choice in ["1", "2", "3", "4"]:
+            elif choice in ["1", "2", "3", "4", "5"]:
                 # Get paper file path
                 paper_file_path = get_paper_file_path()
                 if not paper_file_path:
@@ -97,6 +99,11 @@ def main():
                         print("\n📊 Table-only processing not yet implemented.")
                         print("Please use option 1 (full processing) and select tables when prompted.")
                         continue
+                        
+                    elif choice == "5":
+                        # References only
+                        print("\n📚 Starting references-only processing...")
+                        success = processor.process_references_only(paper_file_path)
                     
                     if success:
                         print("\n✅ Processing completed successfully!")
