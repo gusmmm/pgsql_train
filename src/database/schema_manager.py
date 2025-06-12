@@ -444,6 +444,85 @@ class SchemaManager:
         finally:
             cursor.close()
 
+    def create_paper_images_table(self, schema_name: str = 'papers') -> None:
+        """
+        Create the paper_images table for storing extracted image data and AI analysis.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor()
+        try:
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {schema_name}.paper_images (
+                -- Core identification
+                id BIGINT PRIMARY KEY,  -- 64-bit unique identifier from ImageData
+                paper_id BIGINT REFERENCES {schema_name}.paper_metadata(id) ON DELETE CASCADE,
+                image_number INTEGER NOT NULL,
+                
+                -- Image metadata
+                alt_text TEXT DEFAULT '',
+                image_format VARCHAR(20) DEFAULT '',
+                
+                -- Image data (base64 encoded)
+                image_data TEXT NOT NULL,
+                
+                -- AI-generated analysis
+                summary TEXT NOT NULL,
+                graphic_analysis TEXT NOT NULL,
+                statistical_analysis TEXT DEFAULT '',
+                contextual_relevance TEXT NOT NULL,
+                keywords TEXT[] DEFAULT ARRAY[]::TEXT[],
+                
+                -- Audit fields
+                extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Constraints
+                UNIQUE(paper_id, image_number)
+            );
+            """
+            
+            cursor.execute(create_table_sql)
+            print(f"Table '{schema_name}.paper_images' created successfully.")
+        finally:
+            cursor.close()
+
+    def create_image_indexes(self, schema_name: str = 'papers') -> None:
+        """
+        Create useful indexes for the paper_images table.
+        
+        Args:
+            schema_name: Name of the schema (default: 'papers')
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        indexes = [
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_paper_id ON {schema_name}.paper_images(paper_id);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_image_number ON {schema_name}.paper_images(image_number);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_image_format ON {schema_name}.paper_images(image_format);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_keywords ON {schema_name}.paper_images USING GIN(keywords);",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_summary ON {schema_name}.paper_images USING GIN(to_tsvector('english', summary));",
+            f"CREATE INDEX IF NOT EXISTS idx_paper_images_extracted_at ON {schema_name}.paper_images(extracted_at);"
+        ]
+        
+        cursor = self.db_connection.connection.cursor()
+        try:
+            for index_sql in indexes:
+                try:
+                    cursor.execute(index_sql)
+                    index_name = index_sql.split('idx_')[1].split(' ')[0]
+                    print(f"Image index created: {index_name}")
+                except Exception as e:
+                    print(f"Warning: Could not create image index: {e}")
+        finally:
+            cursor.close()
+
     def setup_complete_schema(self, schema_name: str = 'papers') -> None:
         """
         Set up the complete database schema for paper metadata.
@@ -524,6 +603,17 @@ class SchemaManager:
                 self.create_table_data_trigger(schema_name)
             else:
                 print(f"Table '{schema_name}.table_data' already exists.")
+            
+            # Check and create paper_images table if needed
+            if not self.check_table_exists('paper_images', schema_name):
+                print(f"Creating table '{schema_name}.paper_images'...")
+                self.create_paper_images_table(schema_name)
+                
+                # Create indexes for paper_images
+                print("Creating indexes for paper_images...")
+                self.create_image_indexes(schema_name)
+            else:
+                print(f"Table '{schema_name}.paper_images' already exists.")
             
             # Commit all changes
             if self.db_connection.connection:

@@ -9,9 +9,9 @@ import os
 import sys
 from typing import Optional, Tuple, Dict, List
 
-from .models import PaperMetadata, TextSection, TableData
-from .extraction import AIExtractor, TextExtractor, TableExtractor
-from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository, TableDataRepository
+from .models import PaperMetadata, TextSection, TableData, ImageData
+from .extraction import AIExtractor, TextExtractor, TableExtractor, ImageExtractor
+from .database import DatabaseConnection, SchemaManager, PaperMetadataRepository, TextSectionsRepository, TableDataRepository, ImageRepository
 from .utils import FileLoader
 
 
@@ -38,9 +38,11 @@ class PaperProcessor:
         self.repository = PaperMetadataRepository(self.db_connection, schema_name)
         self.text_sections_repository = TextSectionsRepository(self.db_connection, schema_name)
         self.table_data_repository = TableDataRepository(self.db_connection, schema_name)
+        self.image_repository = ImageRepository(self.db_connection, schema_name)
         self.extractor = AIExtractor()
         self.text_extractor = TextExtractor()
         self.table_extractor = TableExtractor()
+        self.image_extractor = ImageExtractor()
         
         print(f"✓ Paper processor initialized with schema '{schema_name}'")
     
@@ -100,6 +102,11 @@ class PaperProcessor:
                     print("   Deleting existing text sections...")
                     self.text_sections_repository.delete_by_paper_id(paper_metadata.id)
                 
+                # Delete existing images if user chose to overwrite them
+                if overwrite_choices.get('images', False):
+                    print("   Deleting existing images...")
+                    self.image_repository.delete_by_paper_id(paper_metadata.id)
+                
                 # Delete existing tables if user chose to overwrite them
                 if overwrite_choices.get('tables', False):
                     print("   Deleting existing tables...")
@@ -146,6 +153,22 @@ class PaperProcessor:
                 print("\n⏭️  Step 10-11: Skipping tables (keeping existing)")
                 tables = []
             
+            # Step 12: Extract and save images if needed
+            if not exists or overwrite_choices.get('images', False):
+                print("\n🖼️  Step 12: Extracting images using AI...")
+                images = self.image_extractor.extract_images(paper_content, paper_metadata.id)
+                
+                if images:
+                    print("\n💾 Step 13: Saving images to database...")
+                    images_success = self.image_repository.save_images(images)
+                    if not images_success:
+                        print("⚠️  Warning: Failed to save some images")
+                else:
+                    print("⚠️  Warning: No images found or extracted")
+            else:
+                print("\n⏭️  Step 12-13: Skipping images (keeping existing)")
+                images = []
+            
             # Commit the transaction
             if self.db_connection.connection:
                 self.db_connection.connection.commit()
@@ -155,12 +178,105 @@ class PaperProcessor:
             print(f"   📄 Paper metadata: {'Updated' if exists else 'Inserted'}")
             print(f"   📝 Text sections: {len(text_sections)} sections processed")
             print(f"   📊 Tables: {len(tables)} tables processed")
+            print(f"   🖼️ Images: {len(images)} images processed")
             print("=" * 60)
             
             return True
             
         except Exception as e:
             print(f"\n✗ Critical error in paper processing pipeline: {e}")
+            # Rollback on error
+            if self.db_connection.connection:
+                self.db_connection.connection.rollback()
+            return False
+            
+        finally:
+            self.close_connections()
+    
+    def process_images_only(self, paper_file_path: str) -> bool:
+        """
+        Process only images from a paper file.
+        
+        Args:
+            paper_file_path: Path to the paper file to process
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        print("🚀 Starting image-only processing pipeline...")
+        print("=" * 60)
+        
+        try:
+            # Step 1: Validate and load paper content
+            print("\n📖 Step 1: Loading paper content...")
+            if not FileLoader.validate_file_exists(paper_file_path):
+                print(f"✗ Error: Paper file does not exist: {paper_file_path}")
+                return False
+            
+            paper_content = FileLoader.load_paper_content(paper_file_path)
+            if not paper_content:
+                print("✗ Failed to load paper content")
+                return False
+            
+            # Step 2: Setup database connection
+            print("\n🗄️  Step 2: Setting up database connection...")
+            self.db_connection.connect()
+            
+            print("\n📋 Step 3: Ensuring database schema exists...")
+            self.schema_manager.setup_complete_schema(self.schema_name)
+            
+            # Step 4: Check if paper exists in database
+            print("\n🔍 Step 4: Looking for existing paper in database...")
+            
+            # Try to find paper by filename first
+            existing_paper = self.repository.find_by_source_file(paper_file_path)
+            
+            if not existing_paper:
+                print("✗ Paper not found in database. Please process the paper metadata first using the main processor.")
+                return False
+            
+            paper_id = existing_paper['id']
+            print(f"✓ Found existing paper with ID: {paper_id}")
+            print(f"   Title: {existing_paper['title']}")
+            
+            # Step 5: Check for existing images
+            existing_images_count = len(self.image_repository.find_by_paper_id(paper_id))
+            if existing_images_count > 0:
+                print(f"\n⚠️  Found {existing_images_count} existing images for this paper.")
+                overwrite = input("Do you want to overwrite existing images? (y/N): ").strip().lower()
+                if overwrite in ['y', 'yes']:
+                    print("   Deleting existing images...")
+                    self.image_repository.delete_by_paper_id(paper_id)
+                else:
+                    print("   Skipping image processing to preserve existing data.")
+                    return True
+            
+            # Step 6: Extract and save images
+            print("\n🖼️  Step 6: Extracting images using AI...")
+            images = self.image_extractor.extract_images(paper_content, paper_id)
+            
+            if images:
+                print("\n💾 Step 7: Saving images to database...")
+                images_success = self.image_repository.save_images(images)
+                if not images_success:
+                    print("⚠️  Warning: Failed to save some images")
+                    return False
+            else:
+                print("⚠️  Warning: No images found or extracted")
+            
+            # Commit the transaction
+            if self.db_connection.connection:
+                self.db_connection.connection.commit()
+                
+            print("\n" + "=" * 60)
+            print("🎉 Image processing completed successfully!")
+            print(f"   🖼️  Images: {len(images)} images processed")
+            print("=" * 60)
+            
+            return True
+            
+        except Exception as e:
+            print(f"\n✗ Critical error in image processing pipeline: {e}")
             # Rollback on error
             if self.db_connection.connection:
                 self.db_connection.connection.rollback()
@@ -182,6 +298,7 @@ class PaperProcessor:
             - 'metadata': whether to overwrite paper metadata
             - 'text_sections': whether to overwrite text sections  
             - 'tables': whether to overwrite tables
+            - 'images': whether to overwrite images
         """
         doi = paper_metadata.doi
         title = paper_metadata.title
@@ -212,41 +329,52 @@ class PaperProcessor:
             # Get existing data counts for informed decision
             text_sections_count = self.text_sections_repository.count_sections_by_paper_id(existing_paper['id'])
             tables_count = self.table_data_repository.count_tables_by_paper_id(existing_paper['id'])
+            images_count = len(self.image_repository.find_by_paper_id(existing_paper['id']))
             
             print(f"\n📊 Existing data:")
             print(f"   Text sections: {text_sections_count}")
             print(f"   Tables: {tables_count}")
+            print(f"   Images: {images_count}")
             
             # Ask user what to overwrite with modular choices
             print("\n❓ What would you like to overwrite?")
             print("   1. Skip processing (keep all existing data)")
             print("   2. Overwrite text sections only")
             print("   3. Overwrite tables only") 
-            print("   4. Overwrite text sections and tables")
-            print("   5. Overwrite everything (metadata, text sections, and tables)")
+            print("   4. Overwrite images only")
+            print("   5. Overwrite text sections and tables")
+            print("   6. Overwrite text sections and images")
+            print("   7. Overwrite tables and images")
+            print("   8. Overwrite everything (metadata, text sections, tables, and images)")
             
             while True:
                 try:
-                    choice = input("Enter choice (1-5): ").strip()
+                    choice = input("Enter choice (1-8): ").strip()
                     
                     if choice == "1":
-                        return True, {"metadata": False, "text_sections": False, "tables": False}
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": False}
                     elif choice == "2":
-                        return True, {"metadata": True, "text_sections": True, "tables": False}
+                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": False}
                     elif choice == "3":
-                        return True, {"metadata": True, "text_sections": False, "tables": True}
+                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": False}
                     elif choice == "4":
-                        return True, {"metadata": True, "text_sections": True, "tables": True}
+                        return True, {"metadata": False, "text_sections": False, "tables": False, "images": True}
                     elif choice == "5":
-                        return True, {"metadata": True, "text_sections": True, "tables": True}
+                        return True, {"metadata": False, "text_sections": True, "tables": True, "images": False}
+                    elif choice == "6":
+                        return True, {"metadata": False, "text_sections": True, "tables": False, "images": True}
+                    elif choice == "7":
+                        return True, {"metadata": False, "text_sections": False, "tables": True, "images": True}
+                    elif choice == "8":
+                        return True, {"metadata": True, "text_sections": True, "tables": True, "images": True}
                     else:
-                        print("Invalid choice. Please enter 1, 2, 3, 4, or 5.")
+                        print("Invalid choice. Please enter 1, 2, 3, 4, 5, 6, 7, or 8.")
                         
                 except KeyboardInterrupt:
                     print("\n⏭️  Operation cancelled. Skipping paper processing.")
-                    return True, {"metadata": False, "text_sections": False, "tables": False}
+                    return True, {"metadata": False, "text_sections": False, "tables": False, "images": False}
         
-        return False, {"metadata": True, "text_sections": True, "tables": True}  # doesn't exist, process everything
+        return False, {"metadata": True, "text_sections": True, "tables": True, "images": True}  # doesn't exist, process everything
     
     def _save_paper_metadata(self, paper_metadata: PaperMetadata, update_existing: bool = False) -> bool:
         """

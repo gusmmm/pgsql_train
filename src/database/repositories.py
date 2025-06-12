@@ -10,7 +10,7 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from .connection import DatabaseConnection
-from ..models import PaperMetadata, TextSection, TableData
+from ..models import PaperMetadata, TextSection, TableData, ImageData
 
 
 class PaperMetadataRepository:
@@ -440,6 +440,30 @@ class PaperMetadataRepository:
             return None
         finally:
             cursor.close()
+    
+    def find_by_source_file(self, source_file: str) -> Optional[Dict[str, Any]]:
+        """
+        Find a paper by source file path.
+        
+        Args:
+            source_file: Source file path
+            
+        Returns:
+            Paper data as dictionary or None if not found
+        """
+        if not self.db_connection.connection:
+            raise Exception("No database connection available")
+            
+        cursor = self.db_connection.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cursor.execute(f"""
+                SELECT * FROM {self.schema_name}.{self.table_name} 
+                WHERE source_file = %s
+            """, (source_file,))
+            result = cursor.fetchone()
+            return dict(result) if result else None
+        finally:
+            cursor.close()
 
 
 class TextSectionsRepository:
@@ -845,4 +869,258 @@ class TableDataRepository:
             
         except Exception as e:
             print(f"✗ Error finding tables: {e}")
+            return []
+
+
+class ImageRepository:
+    """
+    Repository for paper images database operations.
+    
+    This class encapsulates all database operations related to paper images,
+    following the repository pattern for clean separation of concerns.
+    """
+    
+    def __init__(self, db_connection: DatabaseConnection, schema_name: str = 'papers'):
+        """
+        Initialize the repository.
+        
+        Args:
+            db_connection: DatabaseConnection instance
+            schema_name: Name of the schema (default: 'papers')
+        """
+        self.db_connection = db_connection
+        self.schema_name = schema_name
+        self.table_name = 'paper_images'
+    
+    def save_image(self, image_data) -> bool:
+        """
+        Save an image to the database.
+        
+        Args:
+            image_data: ImageData object to save
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            insert_sql = f"""
+            INSERT INTO {self.schema_name}.{self.table_name} (
+                id, paper_id, image_number, alt_text, image_format,
+                image_data, summary, graphic_analysis, statistical_analysis,
+                contextual_relevance, keywords, extracted_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """
+            
+            cursor.execute(insert_sql, (
+                image_data.id,
+                image_data.paper_id,
+                image_data.image_number,
+                image_data.alt_text,
+                image_data.image_format,
+                image_data.image_data,
+                image_data.summary,
+                image_data.graphic_analysis,
+                image_data.statistical_analysis,
+                image_data.contextual_relevance,
+                image_data.keywords,
+                image_data.extracted_at
+            ))
+            
+            cursor.close()
+            print(f"✓ Image {image_data.image_number} saved to database")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error saving image {image_data.image_number}: {e}")
+            return False
+    
+    def save_images(self, images: List) -> bool:
+        """
+        Save multiple images to the database in a batch operation.
+        
+        Args:
+            images: List of ImageData objects to save
+            
+        Returns:
+            True if all successful, False if any failed
+        """
+        if not images:
+            print("✓ No images to save")
+            return True
+        
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            insert_sql = f"""
+            INSERT INTO {self.schema_name}.{self.table_name} (
+                id, paper_id, image_number, alt_text, image_format,
+                image_data, summary, graphic_analysis, statistical_analysis,
+                contextual_relevance, keywords, extracted_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """
+            
+            # Prepare data for batch insert
+            batch_data = []
+            for image in images:
+                batch_data.append((
+                    image.id,
+                    image.paper_id,
+                    image.image_number,
+                    image.alt_text,
+                    image.image_format,
+                    image.image_data,
+                    image.summary,
+                    image.graphic_analysis,
+                    image.statistical_analysis,
+                    image.contextual_relevance,
+                    image.keywords,
+                    image.extracted_at
+                ))
+            
+            # Execute batch insert
+            cursor.executemany(insert_sql, batch_data)
+            cursor.close()
+            
+            print(f"✓ Successfully saved {len(images)} images to database")
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error saving images: {e}")
+            return False
+    
+    def delete_by_paper_id(self, paper_id: int) -> bool:
+        """
+        Delete all images for a specific paper.
+        
+        Args:
+            paper_id: Paper ID to delete images for
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            delete_sql = f"""
+            DELETE FROM {self.schema_name}.{self.table_name} 
+            WHERE paper_id = %s
+            """
+            
+            cursor.execute(delete_sql, (paper_id,))
+            deleted_count = cursor.rowcount
+            cursor.close()
+            
+            if deleted_count > 0:
+                print(f"✓ Deleted {deleted_count} existing images for paper {paper_id}")
+            else:
+                print(f"✓ No existing images found for paper {paper_id}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"✗ Error deleting images for paper {paper_id}: {e}")
+            return False
+    
+    def exists_for_paper(self, paper_id: int) -> bool:
+        """
+        Check if any images exist for a paper.
+        
+        Args:
+            paper_id: Paper ID to check
+            
+        Returns:
+            True if images exist, False otherwise
+        """
+        if not self.db_connection.connection:
+            return False
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            cursor.execute(f"""
+                SELECT EXISTS(
+                    SELECT 1 FROM {self.schema_name}.{self.table_name} 
+                    WHERE paper_id = %s
+                )
+            """, (paper_id,))
+            
+            result = cursor.fetchone()
+            cursor.close()
+            
+            return result[0] if result else False
+            
+        except Exception as e:
+            print(f"✗ Error checking for existing images: {e}")
+            return False
+    
+    def find_by_paper_id(self, paper_id: int) -> List:
+        """
+        Find all images for a specific paper.
+        
+        Args:
+            paper_id: Paper ID to find images for
+            
+        Returns:
+            List of ImageData objects
+        """
+        if not self.db_connection.connection:
+            print("✗ No database connection available")
+            return []
+        
+        try:
+            cursor = self.db_connection.connection.cursor()
+            
+            select_sql = f"""
+            SELECT id, paper_id, image_number, alt_text, image_format,
+                   image_data, summary, graphic_analysis, statistical_analysis,
+                   contextual_relevance, keywords, extracted_at
+            FROM {self.schema_name}.{self.table_name} 
+            WHERE paper_id = %s 
+            ORDER BY image_number
+            """
+            
+            cursor.execute(select_sql, (paper_id,))
+            rows = cursor.fetchall()
+            cursor.close()
+            
+            images = []
+            for row in rows:
+                image_data = ImageData(
+                    id=row[0],
+                    paper_id=row[1],
+                    image_number=row[2],
+                    alt_text=row[3],
+                    image_format=row[4],
+                    image_data=row[5],
+                    summary=row[6],
+                    graphic_analysis=row[7],
+                    statistical_analysis=row[8],
+                    contextual_relevance=row[9],
+                    keywords=row[10] or [],
+                    extracted_at=row[11]
+                )
+                images.append(image_data)
+            
+            return images
+            
+        except Exception as e:
+            print(f"✗ Error finding images: {e}")
             return []
