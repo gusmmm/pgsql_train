@@ -1,11 +1,190 @@
-# Python-generated files
+# Python
+## Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
 
-# Virtual environments
-.venv
+## C extensions
+*.so
+
+## Distribution / packaging
+.Python
+# build/  -- Frontend uses a 'build' directory; Python build dirs are usually more specific
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+## PyInstaller
+*.manifest
+*.spec
+
+## Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+## Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+## Translations
+*.mo
+*.pot
+
+## Django stuff:
+# *.log  -- Covered by generic log section
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+## Flask stuff:
+instance/
+.webassets-cache
+
+## Scrapy stuff:
+.scrapy
+
+## Sphinx documentation
+docs/_build/
+
+## Python virtualenv
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+frontend/api/venv/ # Specific venv for the API if created there
+
+## Spyder project settings
+.spyderproject
+.spyproject
+
+## Rope project settings
+.ropeproject
+
+## mkdocs documentation
+/site
+
+## mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+## Pyre type checker
+.pyre/
+
+# Environments & Secrets
+# Ignore .env files in the root and API directory by default.
+# IMPORTANT: If you have a .env.example or similar that SHOULD be committed,
+# add an explicit !.env.example line.
+*.env
+frontend/api/*.env 
+# An exception for frontend/.env which might contain non-sensitive build vars like REACT_APP_API_BASE_URL
+# If frontend/.env contains secrets, it should be gitignored too.
+# !frontend/.env 
+.env.local
+.env.*.local
+!.env.example
+!.env.sample
+
+# Node.js / React (specifically for the frontend directory)
+frontend/node_modules/
+frontend/build/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+# Lockfiles (package-lock.json, yarn.lock, pnpm-lock.yaml) should typically be committed.
+# uv.lock is in the root and should be committed.
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE / Editor specific
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/cSpell.json # If you use Code Spell Checker and want to share config
+# JetBrains
+.idea/
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+# Other common editor/IDE temp files
+*.swp
+*~
+*.bak
+*.tmp
+
+# Log files
+logs/
+*.log
+*.log.*
+api.log
+debug.log
+
+# Temporary files
+tmp/
+
+# Generated PDF/Office documents (if any, uncomment if needed)
+# *.pdf
+# *.doc
+# *.docx
+# *.xls
+# *.xlsx
+# *.ppt
+# *.pptx
+
+# Credentials & Sensitive Files (add specific names if any)
+# credentials.json
+# secrets.yaml
+# config.local.js
+
+# Docker cache
+.dockerignore
+
+# Experimental outputs (if not intended for commit)
+experimental/*.json
+experimental/*.csv
+experimental/*.txt
+!experimental/*_schema.sql # Keep schema proposals
+!experimental/*.md # Keep markdown documentation/proposals
+
+# Database files (if any local instances are created, e.g. SQLite for testing)
+*.sqlite
+*.sqlite3
+
+# Output files from main scripts (if they generate local files not meant for commit)
+# Example: output.json, results.csv
