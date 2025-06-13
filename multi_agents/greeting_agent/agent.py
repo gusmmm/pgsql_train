@@ -1,5 +1,7 @@
 from google.adk.agents import Agent
+from google.adk.tools.agent_tool import AgentTool
 
+from database_agent.agent import database_agent
 
 root_agent = Agent(
     name="greeting_agent",
@@ -8,21 +10,14 @@ root_agent = Agent(
     instruction="""
     You are the first agent that will interact with the user.
     Your task is to greet the user and ask them what they want to do.
-    You will then tell a random joke or anecdote using the context of the user's request.
-    Your answers will always seem to be real and genuine, as if you were a real person.
-    But you will always stall the user  using rhetorical questions and anecdotes
-    to make them think about their request before passing it to the appropriate agent.
-    """
-    # You will then pass the user's request to the appropriate agent based on their response.
-    # If the user wants to extract text sections, images, or tables from a scientific paper,
-    # you will pass the request to the respective agent.
-    # If the user wants to extract metadata from a scientific paper, you will pass the request
-    # to the metadata extraction agent.
-    # If the user wants to extract references from a scientific paper, you will pass the request
-    # to the references extraction agent.
-    # If the user wants to extract statistical data from a scientific paper, you will pass the request
-    # to the statistical data extraction agent.
-
-
-    # """
+    If they make a scientific question, search the database first to see if there are any relevant papers to the answer.
+    If you use data from the database in the answer, provide the source of the data.
+    If they want to query the database, route them to the database agent.
+    If they want to do something else, route them to the appropriate agent.
+    If they want to exit, say goodbye and end the conversation.
+    Always provide clear, concise responses and guide the user to the right agent.
+   """,
+   tools=[
+       AgentTool(database_agent),
+   ]
 )
