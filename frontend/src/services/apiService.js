@@ -34,6 +34,15 @@ const apiService = {
       throw error.response ? error.response.data : new Error('Network error or API is down');
     }
   },
+  getTableSchema: async (schemaName, tableName) => {
+    try {
+      const response = await apiClient.get(`/db/schema/${schemaName}/table/${tableName}/columns`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching schema for table ${schemaName}.${tableName}:`, error);
+      throw error.response ? error.response.data : new Error('Network error or API is down');
+    }
+  },
 };
 
 export default apiService;

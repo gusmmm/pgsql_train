@@ -119,6 +119,116 @@ def get_schema_details(schema_name):
             
     return jsonify(details)
 
+@app.route('/api/db/schema/<schema_name>/table/<table_name>/columns', methods=['GET'])
+def get_table_schema(schema_name, table_name):
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Get detailed column information
+        cursor.execute('''
+            SELECT 
+                column_name,
+                data_type,
+                character_maximum_length,
+                numeric_precision,
+                numeric_scale,
+                is_nullable,
+                column_default,
+                ordinal_position
+            FROM information_schema.columns 
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position;
+        ''', (schema_name, table_name))
+        
+        columns = []
+        for row in cursor.fetchall():
+            column_info = {
+                "name": row[0],
+                "data_type": row[1],
+                "max_length": row[2],
+                "numeric_precision": row[3],
+                "numeric_scale": row[4],
+                "is_nullable": row[5] == 'YES',
+                "default_value": row[6],
+                "position": row[7]
+            }
+            columns.append(column_info)
+        
+        # Get primary key information
+        cursor.execute('''
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu 
+                ON tc.constraint_name = kcu.constraint_name
+                AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'PRIMARY KEY'
+                AND tc.table_schema = %s 
+                AND tc.table_name = %s;
+        ''', (schema_name, table_name))
+        
+        primary_keys = [row[0] for row in cursor.fetchall()]
+        
+        # Get foreign key information
+        cursor.execute('''
+            SELECT 
+                kcu.column_name,
+                ccu.table_schema AS foreign_table_schema,
+                ccu.table_name AS foreign_table_name,
+                ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc 
+            JOIN information_schema.key_column_usage AS kcu
+                ON tc.constraint_name = kcu.constraint_name
+                AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+                ON ccu.constraint_name = tc.constraint_name
+                AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' 
+                AND tc.table_schema = %s
+                AND tc.table_name = %s;
+        ''', (schema_name, table_name))
+        
+        foreign_keys = []
+        for row in cursor.fetchall():
+            foreign_keys.append({
+                "column": row[0],
+                "references_schema": row[1],
+                "references_table": row[2],
+                "references_column": row[3]
+            })
+        
+        # Get table row count (optional, might be slow for large tables)
+        try:
+            cursor.execute(f'SELECT COUNT(*) FROM "{schema_name}"."{table_name}";')
+            result_row = cursor.fetchone()
+            row_count = result_row[0] if result_row else None
+        except:
+            row_count = None
+        
+        cursor.close()
+        
+        result = {
+            "schemaName": schema_name,
+            "tableName": table_name,
+            "columns": columns,
+            "primaryKeys": primary_keys,
+            "foreignKeys": foreign_keys,
+            "rowCount": row_count
+        }
+        
+        return jsonify(result)
+        
+    except psycopg2.Error as e:
+        return jsonify({"error": f"Database query failed for table {schema_name}.{table_name}: {str(e)}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
 if __name__ == '__main__':
     # Make sure .env is loaded
     if not (os.getenv("POSTGRES_HOST") and os.getenv("POSTGRES_USER") and os.getenv("POSTGRES_DB")):

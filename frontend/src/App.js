@@ -29,15 +29,19 @@ import {
   FolderSpecial as FolderSpecialIcon, // Schema icon (alternative)
 } from '@mui/icons-material';
 import apiService from './services/apiService';
+import TableSchemaViewer from './components/TableSchemaViewer';
 
 function App() {
   const [dbStatus, setDbStatus] = useState(null);
   const [schemas, setSchemas] = useState([]);
   const [selectedSchema, setSelectedSchema] = useState(null);
   const [schemaDetails, setSchemaDetails] = useState(null);
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [tableSchema, setTableSchema] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [loadingTableSchema, setLoadingTableSchema] = useState(false);
   const [error, setError] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -70,6 +74,21 @@ function App() {
       setLoadingStatus(false);
     }
   }, [fetchSchemas]);
+
+  const fetchTableSchema = useCallback(async (schemaName, tableName) => {
+    setSelectedTable(`${schemaName}.${tableName}`);
+    setLoadingTableSchema(true);
+    setError(null);
+    setTableSchema(null);
+    try {
+      const data = await apiService.getTableSchema(schemaName, tableName);
+      setTableSchema(data);
+    } catch (err) {
+      setError(`Failed to fetch schema for table ${schemaName}.${tableName}: ${err.message}`);
+    } finally {
+      setLoadingTableSchema(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchDbStatus();
@@ -193,7 +212,11 @@ function App() {
                                         selectedSchema={selectedSchema}
                                         schemaDetails={schemaDetails}
                                         loadingDetails={loadingDetails}
+                                        selectedTable={selectedTable}
+                                        tableSchema={tableSchema}
+                                        loadingTableSchema={loadingTableSchema}
                                         onRefresh={fetchDbStatus}
+                                        onTableSelect={fetchTableSchema}
                                       />} />
               {/* Add other routes here if needed */}
             </Routes>
@@ -204,7 +227,19 @@ function App() {
   );
 }
 
-const DashboardPage = ({ dbStatus, loadingStatus, error, selectedSchema, schemaDetails, loadingDetails, onRefresh }) => {
+const DashboardPage = ({ 
+  dbStatus, 
+  loadingStatus, 
+  error, 
+  selectedSchema, 
+  schemaDetails, 
+  loadingDetails, 
+  selectedTable,
+  tableSchema,
+  loadingTableSchema,
+  onRefresh, 
+  onTableSelect 
+}) => {
   return (
     <Grid container spacing={3}>
       <Grid item xs={12}>
@@ -255,9 +290,17 @@ const DashboardPage = ({ dbStatus, loadingStatus, error, selectedSchema, schemaD
                 {schemaDetails.tables && schemaDetails.tables.length > 0 ? (
                   <List dense>
                     {schemaDetails.tables.map((table) => (
-                      <ListItem key={table}>
+                      <ListItem 
+                        key={table} 
+                        button 
+                        onClick={() => onTableSelect(selectedSchema, table)}
+                        selected={selectedTable === `${selectedSchema}.${table}`}
+                      >
                         <ListItemIcon><StorageIcon fontSize="small" /></ListItemIcon>
-                        <ListItemText primary={table} />
+                        <ListItemText 
+                          primary={table} 
+                          secondary={selectedTable === `${selectedSchema}.${table}` ? "Click to view schema" : "Click to view schema"}
+                        />
                       </ListItem>
                     ))}
                   </List>
@@ -297,6 +340,16 @@ const DashboardPage = ({ dbStatus, loadingStatus, error, selectedSchema, schemaD
               <Alert severity="info">No details available for this schema.</Alert>
             )}
           </Paper>
+        </Grid>
+      )}
+
+      {selectedTable && (
+        <Grid item xs={12}>
+          <TableSchemaViewer 
+            tableSchema={tableSchema}
+            loading={loadingTableSchema}
+            error={error}
+          />
         </Grid>
       )}
     </Grid>
